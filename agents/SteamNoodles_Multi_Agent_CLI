@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+SteamNoodles Multi-Agent CLI
+- Agent 1: Feedback Response Agent
+- Agent 2: Sentiment Visualization Agent
+- Interactive command-line interface
+"""
+
+import argparse
+import re
+from dataclasses import dataclass
+from typing import Dict, List, Optional
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from transformers import pipeline
+
+# ---------------------------
+# Paths & constants
+# ---------------------------
+DATA_PATH = r"C:\Users\kadira\Documents\steamnoodles-feedback-agent\data set\Yelp Restaurant Reviews.csv"
+
+# ---------------------------
+# Feedback Response Agent
+# ---------------------------
+_SENTIMENT_MODEL_ID = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+_GEN_MODEL_ID = "distilgpt2"
+
+_sentiment_pipe = None
+_gen_pipe = None
+
+ASPECT_KEYWORDS: Dict[str, List[str]] = {
+    "food": ["food","taste","noodle","soup","broth","spice","dish","meal","menu","flavor","flavour","fresh","cold","hot","undercooked","overcooked","salty","sweet","spicy","soggy"],
+    "service": ["service","staff","waiter","waitress","server","cashier","manager","slow","rude","friendly","attentive","delay","queue","waiting","late","host","hostess","polite"],
+    "ambiance": ["ambience","ambiance","atmosphere","music","noise","crowd","clean","dirty","smell","decor","lighting","seat","seating","table","floor","temperature"],
+    "price": ["price","cost","expensive","cheap","value","worth","overpriced","bill","charge","charged"],
+    "delivery": ["delivery","takeaway","take-away","pickup","uber eats","ubereats","doordash","rider","packaging","leaked","missing"]
+}
+
+NEG_STRONG_TERMS = ["terrible","awful","horrible","worst","disgusting","never again","refund","complaint","complain","unacceptable"]
+
+@dataclass
+class SentimentResult:
+    label: str
+    confidence: float
+
+def get_sentiment_pipe():
+    global _sentiment_pipe
+    if _sentiment_pipe is None:
+        _sentiment_pipe = pipeline("text-classification", model=_SENTIMENT_MODEL_ID, tokenizer=_SENTIMENT_MODEL_ID, return_all_scores=True, truncation=True)
+    return _sentiment_pipe
+
+def get_gen_pipe():
+    global _gen_pipe
+    if _gen_pipe is None:
+        _gen_pipe = pipeline("text-generation", model=_GEN_MODEL_ID)
+    return _gen_pipe
+
+def classify_sentiment(review: str) -> SentimentResult:
+    pipe = get_sentiment_pipe()
+    scores = pipe(review)[0]
+    top = max(scores, key=lambda s: s["score"])
+    return SentimentResult(label=top["label"], confidence=float(top["score"]))
+
+def detect_aspects(text: str, max_aspects: int = 2) -> List[str]:
+    text_l = text.lower()
+    hits: List = []
+    for aspect, kws in ASPECT_KEYWORDS.items():
+        score = sum(1 for kw in kws if kw in text_l)
+        if score > 0:
+            hits.append((aspect, score))
+    hits.sort(key=lambda x: x[1], reverse=True)
+    return [a for a, _ in hits[:max_aspects]] or ["general"]
+
+def is_strong_negative(text: str) -> bool:
+    t = text.lower()
+    return any(term in t for term in NEG_STRONG_TERMS)
+
+def build_template_reply(review: str, sentiment: SentimentResult, aspects: List[str], customer_name: Optional[str] = None) -> str:
+    name_prefix = f"Hi {customer_name}," if customer_name else "Hi there,"
+    aspect_str = ", ".join(aspects)
+    if sentiment.label == "positive":
+        body = f" thank you for the wonderful feedback! We're thrilled that you enjoyed the {aspect_str}. Your kind words mean a lot to our team."
+        closing = "Warm thanks, SteamNoodles Team"
+    elif sentiment.label == "neutral":
+        body = f" thanks for sharing your thoughts. We will keep your notes about the {aspect_str} in mind as we continue to improve."
+        closing = "Kind regards, SteamNoodles Team"
+    else:
+        apology = "We're sorry" if not is_strong_negative(review) else "We’re truly sorry"
+        body = f" {apology} that your experience with the {aspect_str} didn't meet expectations. Your feedback helps us improve."
+        closing = "Sincerely, SteamNoodles Support"
+    return f"{name_prefix}{body}\n\n{closing}"
+
+def maybe_paraphrase(reply: str, enable_generation: bool) -> str:
+    if not enable_generation:
+        return reply
+    gen = get_gen_pipe()
+    prompt = f"Paraphrase politely and concisely (2 sentences max), keep all meaning:\nOriginal: {reply}\nParaphrase:"
+    out = gen(prompt, max_new_tokens=70, do_sample=True, temperature=0.7, top_p=0.9, num_return_sequences=1)[0]["generated_text"]
+    paraphrased = out.split("Paraphrase:", 1)[-1].strip()
+    paraphrased = re.sub(r"\s*\n\s*", " ", paraphrased)
+    if len(paraphrased) > 520:
+        paraphrased = paraphrased[:520].rsplit(" ", 1)[0] + "…"
+    return paraphrased
+
+def generate_feedback_response(review_text: str, customer_name: Optional[str] = None, use_local_generation: bool = False) -> Dict[str,str]:
+    sent = classify_sentiment(review_text)
+    aspects = detect_aspects(review_text)
+    reply_base = build_template_reply(review_text, sent, aspects, customer_name)
+    reply_final = maybe_paraphrase(reply_base, use_local_generation)
+    return {"sentiment": sent.label, "confidence": f"{sent.confidence:.3f}", "reply": reply_final}
+
+# ---------------------------
+# Sentiment Visualization Agent
+# ---------------------------
+def load_data(path=DATA_PATH):
+    df = pd.read_csv(path)
+    df.rename(columns={col: col.strip().lower() for col in df.columns}, inplace=True)
+    # Ensure required columns
+    if 'date' not in df.columns or 'rating' not in df.columns:
+        raise ValueError("CSV must have 'date' and 'rating' columns")
+    df['date'] = pd.to_datetime(df['date'])
+    # Map rating to sentiment
+    df['sentiment'] = df['rating'].apply(lambda r: 'positive' if r >=4 else ('neutral' if r==3 else 'negative'))
+    return df
+
+def filter_date_range(df, start_date, end_date):
+    mask = (df['date'] >= start_date) & (df['date'] <= end_date)
+    return df.loc[mask]
+
+def plot_sentiment_trend(df, start_date, end_date):
+    df_filtered = filter_date_range(df, start_date, end_date)
+    if df_filtered.empty:
+        print("No reviews found in this date range.")
+        return
+    df_count = df_filtered.groupby(['date','sentiment']).size().reset_index(name='count')
+    df_pivot = df_count.pivot(index='date', columns='sentiment', values='count').fillna(0)
+    sns.set_style("whitegrid")
+    df_pivot.plot(kind='line', figsize=(10,6), marker='o')
+    plt.title(f"Sentiment Trend from {start_date.date()} to {end_date.date()}")
+    plt.xlabel("Date")
+    plt.ylabel("Number of Reviews")
+    plt.xticks(rotation=45)
+    plt.legend(title="Sentiment")
+    plt.tight_layout()
+    plt.show()
+
+# ---------------------------
+# CLI
+# ---------------------------
+def main():
+    print("=== SteamNoodles Multi-Agent CLI ===")
+    while True:
+        print("\nChoose agent:")
+        print("1: Feedback Response Agent")
+        print("2: Sentiment Visualization Agent")
+        print("0: Exit")
+        choice = input("Enter choice: ").strip()
+        if choice == "1":
+            customer_name = input("Enter customer name (optional): ").strip() or None
+            review = input("Enter customer feedback: ").strip()
+            use_gen = input("Use local paraphrase generator? (y/n): ").strip().lower() == 'y'
+            result = generate_feedback_response(review, customer_name, use_gen)
+            print("\n=== Classification ===")
+            print(f"Sentiment : {result['sentiment']} (conf={result['confidence']})")
+            print("\n=== Auto-Reply ===")
+            print(result["reply"])
+        elif choice == "2":
+            try:
+                df = load_data()
+            except Exception as e:
+                print(f"Error loading dataset: {e}")
+                continue
+            start_input = input("Enter start date (YYYY-MM-DD): ").strip()
+            end_input = input("Enter end date (YYYY-MM-DD): ").strip()
+            try:
+                start_date = pd.to_datetime(start_input)
+                end_date = pd.to_datetime(end_input)
+            except ValueError:
+                print("Invalid date format.")
+                continue
+            plot_sentiment_trend(df, start_date, end_date)
+        elif choice == "0":
+            print("Exiting. Goodbye!")
+            break
+        else:
+            print("Invalid choice. Please select 1, 2, or 0.")
+
+if __name__ == "__main__":
+    main()
