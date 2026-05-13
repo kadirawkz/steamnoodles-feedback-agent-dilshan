@@ -29,7 +29,7 @@ from transformers import pipeline
 # ---------------------------
 # Paths & constants
 # ---------------------------
-DATA_PATH = r"C:\Users\kadira\Documents\steamnoodles-feedback-agent\data set\Yelp Restaurant Reviews.csv"
+DATA_PATH = r"D:\repos\steamnoodles-feedback-agent-dilshan\data set\Yelp Restaurant Reviews.csv"
 
 # ---------------------------
 # Feedback Response Agent
