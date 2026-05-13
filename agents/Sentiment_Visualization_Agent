@@ -16,7 +16,7 @@ import seaborn as sns
 # ---------------------------
 # Load dataset
 # ---------------------------
-DATA_PATH = r"C:\Users\kadira\Documents\steamnoodles-feedback-agent\data set\Yelp Restaurant Reviews.csv"
+DATA_PATH = r"D:\repos\steamnoodles-feedback-agent-dilshan\data set\Yelp Restaurant Reviews.csv"
 
 def load_data(path=DATA_PATH):
     df = pd.read_csv(path)
