@@ -10,11 +10,14 @@ Interactive Feedback Response Agent (no API key)
 # ---------------------------
 # Suppress warnings & logging
 # ---------------------------
+import os
 import warnings
+
+os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "1"
 warnings.filterwarnings("ignore")
 
-from transformers import logging
-logging.set_verbosity_error()
+from transformers.utils import logging as hf_logging
+hf_logging.set_verbosity_error()
 
 # ---------------------------
 # Imports
@@ -41,8 +44,7 @@ def get_sentiment_pipe():
             task="text-classification",
             model=_SENTIMENT_MODEL_ID,
             tokenizer=_SENTIMENT_MODEL_ID,
-            return_all_scores=True,
-            truncation=True,
+            top_k=None,
         )
     return _sentiment_pipe
 
@@ -94,8 +96,12 @@ class SentimentResult:
 
 def classify_sentiment(review: str) -> SentimentResult:
     pipe = get_sentiment_pipe()
-    scores = pipe(review)[0]
-    top = max(scores, key=lambda s: s["score"])
+    scores = pipe(
+        review,
+        truncation=True,
+        max_length=512,
+    )
+    top = max(scores[0], key=lambda s: s["score"])
     return SentimentResult(label=top["label"], confidence=float(top["score"]))
 
 
