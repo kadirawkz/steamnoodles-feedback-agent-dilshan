@@ -21,11 +21,11 @@ This project implements an automated restaurant feedback system for **SteamNoodl
    * Generates a line plot showing daily counts of positive, neutral, and negative reviews.
 
 ## Project Details
-
-**Name:** Dilshan Rajapaksha
-**University:** Dir john kotelawala Defence University
-**Year:** 2nd year
-
+```text
+Name        : Dilshan Rajapaksha  
+University  : Sir john kotelawala Defence University  
+Year        : 2nd year  
+```
 ### Summary of Approach
 
 The multi-agent CLI allows users to interactively run either agent and view results without requiring any API keys. The Feedback Response Agent provides real-time sentiment analysis and personalized replies, while the Sentiment Visualization Agent helps the restaurant visualize trends in customer feedback over time.
