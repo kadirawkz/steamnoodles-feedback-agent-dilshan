@@ -22,9 +22,9 @@ This project implements an automated restaurant feedback system for **SteamNoodl
 
 ## Project Details
 
-**Name:** Dilshan Kadira
-**University:** \[Your University Name]
-**Year:** \[Your Year, e.g., 3rd Year]
+**Name:** Dilshan Rajapaksha
+**University:** Dir john kotelawala Defence University
+**Year:** 2nd year
 
 ### Summary of Approach
 
